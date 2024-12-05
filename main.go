@@ -39,6 +39,13 @@ func main() {
 		panic(err.Error())
 	}
 	for _, pod := range pods.Items {
-		fmt.Println(pod.Name)
+		var isReady bool = true
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == "Ready" && condition.Status == "False" {
+				isReady = false
+				break
+			}
+		}
+		fmt.Println(pod.Name, isReady)
 	}
 }
