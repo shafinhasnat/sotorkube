@@ -16,8 +16,10 @@ type KubeClient struct {
 }
 
 type PodStatus struct {
-	name    string
-	isReady bool
+	namespace    string
+	name         string
+	isReady      bool
+	restartCount int32
 }
 
 func kubeConfig() (KubeClient, error) {
@@ -46,18 +48,20 @@ func (k *KubeClient) listPods(namespace string, failing_only bool) []PodStatus {
 	var podinfo []PodStatus
 	for _, pod := range pods.Items {
 		var isReady bool = true
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == "Ready" && condition.Status == "False" {
+		var restartCount int32
+		for _, containerStatus := range pod.Status.ContainerStatuses {
+			restartCount = containerStatus.RestartCount
+			if !containerStatus.Ready {
 				isReady = false
 				break
 			}
 		}
 		if failing_only {
 			if !isReady {
-				podinfo = append(podinfo, PodStatus{pod.Name, isReady})
+				podinfo = append(podinfo, PodStatus{pod.Namespace, pod.Name, isReady, restartCount})
 			}
 		} else {
-			podinfo = append(podinfo, PodStatus{pod.Name, isReady})
+			podinfo = append(podinfo, PodStatus{pod.Namespace, pod.Name, isReady, restartCount})
 		}
 	}
 	return podinfo
@@ -69,6 +73,6 @@ func main() {
 		panic(err.Error())
 	}
 	var namespace string = ``
-	pods := client.listPods(namespace, false)
-	fmt.Print(pods)
+	fmt.Print(client.listPods(namespace, false))
+
 }
