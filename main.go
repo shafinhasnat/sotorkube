@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,19 +15,18 @@ type KubeClient struct {
 	clientset kubernetes.Clientset
 }
 
+type PodStatus struct {
+	name    string
+	isReady bool
+}
+
 func kubeConfig() (KubeClient, error) {
-	var kubeconfig *string
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic(err.Error())
 	}
-	if home != "" {
-		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-	} else {
-		kubeconfig = flag.String("Kubeconfig", "", "Absolute path to the kubeconfig")
-	}
-	flag.Parse()
-	config, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
+	var kubeconfig string = filepath.Join(home, ".kube", "config")
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -40,11 +38,12 @@ func kubeConfig() (KubeClient, error) {
 	return kubeclient, nil
 }
 
-func (k *KubeClient) listPods(namespace string) {
+func (k *KubeClient) listPods(namespace string, failing_only bool) []PodStatus {
 	pods, err := k.clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
+	var podinfo []PodStatus
 	for _, pod := range pods.Items {
 		var isReady bool = true
 		for _, condition := range pod.Status.Conditions {
@@ -53,8 +52,15 @@ func (k *KubeClient) listPods(namespace string) {
 				break
 			}
 		}
-		fmt.Println(pod.Name, isReady)
+		if failing_only {
+			if !isReady {
+				podinfo = append(podinfo, PodStatus{pod.Name, isReady})
+			}
+		} else {
+			podinfo = append(podinfo, PodStatus{pod.Name, isReady})
+		}
 	}
+	return podinfo
 }
 
 func main() {
@@ -63,5 +69,6 @@ func main() {
 		panic(err.Error())
 	}
 	var namespace string = ``
-	client.listPods(namespace)
+	pods := client.listPods(namespace, false)
+	fmt.Print(pods)
 }
