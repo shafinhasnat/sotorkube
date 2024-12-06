@@ -41,7 +41,7 @@ func kubeConfig() (KubeClient, error) {
 	return kubeclient, nil
 }
 
-func (k KubeClient) listPods(namespace string) {
+func (k *KubeClient) listPods(namespace string) {
 	pods, err := k.clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
