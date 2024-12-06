@@ -12,7 +12,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func main() {
+type KubeClient struct {
+	clientset kubernetes.Clientset
+}
+
+func kubeConfig() (KubeClient, error) {
 	var kubeconfig *string
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -31,10 +35,14 @@ func main() {
 	}
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		panic(err.Error())
+		return KubeClient{}, err
 	}
-	var namespace string = ""
-	pods, err := clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
+	kubeclient := KubeClient{clientset: *clientset}
+	return kubeclient, nil
+}
+
+func (k KubeClient) listPods(namespace string) {
+	pods, err := k.clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
 	}
@@ -48,4 +56,13 @@ func main() {
 		}
 		fmt.Println(pod.Name, isReady)
 	}
+}
+
+func main() {
+	client, err := kubeConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	var namespace string = ``
+	client.listPods(namespace)
 }
