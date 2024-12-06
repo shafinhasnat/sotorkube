@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -16,21 +20,28 @@ type KubeClient struct {
 }
 
 type PodStatus struct {
-	namespace    string
-	name         string
-	isReady      bool
-	restartCount int32
+	Namespace    string
+	Name         string
+	IsReady      bool
+	RestartCount int32
+}
+
+type PodState struct {
+	gorm.Model
+	Name         string
+	MailCount    int32
+	MailSentTime time.Time
 }
 
 func kubeConfig() (KubeClient, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		panic(err.Error())
+		return KubeClient{}, err
 	}
 	var kubeconfig string = filepath.Join(home, ".kube", "config")
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
-		panic(err.Error())
+		return KubeClient{}, err
 	}
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -40,10 +51,10 @@ func kubeConfig() (KubeClient, error) {
 	return kubeclient, nil
 }
 
-func (k *KubeClient) listPods(namespace string, failing_only bool) []PodStatus {
+func (k *KubeClient) listPods(namespace string, failing_only bool) ([]PodStatus, error) {
 	pods, err := k.clientset.CoreV1().Pods(namespace).List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		panic(err.Error())
+		return []PodStatus{}, err
 	}
 	var podinfo []PodStatus
 	for _, pod := range pods.Items {
@@ -64,15 +75,71 @@ func (k *KubeClient) listPods(namespace string, failing_only bool) []PodStatus {
 			podinfo = append(podinfo, PodStatus{pod.Namespace, pod.Name, isReady, restartCount})
 		}
 	}
-	return podinfo
+	return podinfo, nil
+}
+
+func podName(namespace string, name string) string {
+	podname := fmt.Sprint(namespace, "/", name)
+	return podname
+}
+
+func watchFailingPods(client KubeClient, db *gorm.DB) {
+	var namespace string = ``
+	all_pods, err := client.listPods(namespace, false)
+	if err != nil {
+		panic(err.Error())
+	}
+	for _, pod := range all_pods {
+		var podname string = podName(pod.Namespace, pod.Name)
+		var podinfo PodState
+		query := db.First(&podinfo, "name = ?", podname)
+		if query.Error == nil { // Existing entry found in db
+			if pod.IsReady {
+				db.Delete(&podinfo, "name = ?", podname)
+			}
+		} else {
+			if !pod.IsReady {
+				if pod.RestartCount > 3 {
+					db.Create(&PodState{Name: podname, MailCount: 0, MailSentTime: time.Now().UTC()})
+				}
+			}
+		}
+	}
+}
+
+func sendAlert(db *gorm.DB) {
+	var unalertedPods []PodState
+	db.Find(&unalertedPods, "mail_count = ?", 0)
+	var pods_sb strings.Builder
+	if len(unalertedPods) == 0 {
+		fmt.Println("No new failing pods")
+	} else {
+		for _, pod := range unalertedPods {
+			pod.MailCount = 1
+			pod.MailSentTime = time.Now().UTC()
+			db.Save(&pod)
+			pods_sb.WriteString(pod.Name)
+			pods_sb.WriteString("\n")
+		}
+		webhook(pods_sb.String())
+	}
+}
+
+func webhook(failed_pods string) {
+	var message string = fmt.Sprint("Failing pod alert\n", failed_pods)
+	fmt.Println(message)
 }
 
 func main() {
+	db, err := gorm.Open(sqlite.Open("podstate.db"), &gorm.Config{})
+	if err != nil {
+		panic(err.Error())
+	}
+	db.AutoMigrate(&PodState{})
 	client, err := kubeConfig()
 	if err != nil {
 		panic(err.Error())
 	}
-	var namespace string = ``
-	fmt.Print(client.listPods(namespace, false))
-
+	watchFailingPods(client, db)
+	defer sendAlert(db)
 }
