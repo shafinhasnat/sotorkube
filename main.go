@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,15 +121,28 @@ func sendAlert(db *gorm.DB) {
 			pod.MailSentTime = time.Now().UTC()
 			db.Save(&pod)
 			pods_sb.WriteString(pod.Name)
-			pods_sb.WriteString("\n")
+			pods_sb.WriteString("\\n\\n")
 		}
 		webhook(pods_sb.String())
 	}
 }
 
-func webhook(failed_pods string) {
-	var message string = fmt.Sprint("Failing pod alert\n", failed_pods)
-	fmt.Println(message)
+func webhook(data string) int {
+	var webhook_url string = os.Getenv("WEBHOOK_URL")
+	var webhook_title string = os.Getenv("WEBHOOK_TITLE")
+	var webhook_body string = os.Getenv("WEBHOOK_BODY")
+	formatted_title := strings.ReplaceAll(webhook_body, "<TITLE>", webhook_title)
+	var message string = fmt.Sprint("Failing pod alert\\n\\n", data)
+	formatted_body := strings.ReplaceAll(formatted_title, "<MESSAGE>", message)
+	var b bytes.Buffer
+	b.WriteString(formatted_body)
+	resp, err := http.Post(webhook_url, "application/json; charset=utf-8", &b)
+	if err != nil {
+		panic(err.Error())
+	}
+	defer resp.Body.Close()
+	status_code := resp.StatusCode
+	return status_code
 }
 
 func main() {

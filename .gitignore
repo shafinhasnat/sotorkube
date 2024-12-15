@@ -37,3 +37,4 @@ Thumbs.db
 # GoLand project files
 *.iml
 *.db
+.env
