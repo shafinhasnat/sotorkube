@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -155,6 +156,11 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	watchFailingPods(client, db)
-	defer sendAlert(db)
+	interval_s := os.Getenv("INTERVAL")
+	interval, _ := strconv.Atoi(interval_s)
+	for {
+		watchFailingPods(client, db)
+		sendAlert(db)
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
 }
