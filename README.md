@@ -1,4 +1,4 @@
-## STORKUBE
+## SOTORKUBE
 Sotorkube is an alerting system for failing pod in kubernetes cluster. Sotorkube name means-
 
 - Sotorko - Alert in bangla
